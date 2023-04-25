@@ -87,10 +87,10 @@ def main(argv):
     signal.signal(signal.SIGINT, sig)
 
     while keep_running:
-        w = SAMMWorker(wait=job_wait)
+        w = SAMMWorker(wait=job_wait, address=qh_file)
         while w.connected == False:
             try:
-                w.connect(qh_file)
+                w.connect()
                 logging.info("Connected to Nagios. Starting to process requests")
             except Exception as e:
                 logging.warning("Nagios not running. Retrying in 5 seconds. %s" % str(e))

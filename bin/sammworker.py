@@ -48,6 +48,7 @@ def main(argv):
     log_file="/usr/local/nagios/var/sammworker.log"
     qh_file='/usr/local/nagios/var/rw/nagios.qh'
     global keep_running
+    global w
 
     try:
         opts, args = getopt.getopt(argv, "Fr:j:p:u:d:")

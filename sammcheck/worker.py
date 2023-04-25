@@ -125,7 +125,7 @@ class SAMMWorker:
         return SAMMWorkerStats(self)
 
     def register(self):
-        self.register_message=b'@wproc register name=test %(pid)d;pid=%(pid)d;' \
+        self.register_message=b'@wproc register name=test%(pid)d;pid=%(pid)d;' \
             b'max_jobs=%(max_jobs)d;plugin=check_samana4;plugin=check_dummy\0\1\0\0\0' \
             % {b'pid': self.pid, b'max_jobs': self.max_jobs}
         logging.debug("Sending registration message: \"%s\"", self.register_message.decode('ascii'))

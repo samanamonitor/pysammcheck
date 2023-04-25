@@ -53,6 +53,7 @@ def main(argv):
         return help()
 
     foreground=False
+    logging.basicConfig(level=logging.INFO, filename=log_file)
     for opt, arg in opts:
         if opt == '-h':
             return help()
@@ -67,11 +68,10 @@ def main(argv):
         elif opt == '-u':
             runas = arg
         elif opt == '-d':
-            logging.basicConfig(level=int(arg))
+            logging.setLevel(logging.DEBUG)
         else:
             return help("Invalid parameter %s" % arg)
 
-    logging.basicConfig(level=logging.INFO, filename=log_file)
     if foreground == False:
         n = os.fork()
         if n > 0:

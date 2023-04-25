@@ -68,7 +68,7 @@ def main(argv):
         elif opt == '-u':
             runas = arg
         elif opt == '-d':
-            logging.setLevel(logging.DEBUG)
+            logging.basicConfig(level=logging.DEBUG, filename=log_file)
         else:
             return help("Invalid parameter %s" % arg)
 

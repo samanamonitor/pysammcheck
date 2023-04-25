@@ -87,7 +87,7 @@ class SAMMWorkerStats:
                 self.last_done_jobe_id)
 
 class SAMMWorker:
-    def __init__(self, sock=None, wait=5):
+    def __init__(self, sock=None, address=None, wait=5):
         if sock is None:
             self.sock = socket.socket(
                             socket.AF_UNIX, socket.SOCK_STREAM)
@@ -109,11 +109,15 @@ class SAMMWorker:
         self.done_jobs=0
         self.received_bytes=0
         self.sent_bytes=0
+        self.address=address
         logging.debug("Instantiation of NagiosWorker with sock=%s and wait=%d", \
             self.sock, self.wait)
 
-    def connect(self, address):
-        self.sock.connect(address)
+    def connect(self, address=None):
+        if address is None:
+            self.sock.connect(self.address)
+        else:
+            self.sock.connect(address)
         logging.debug("Connected to address \"%s\"", address)
         self.connected = True
 

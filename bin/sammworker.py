@@ -14,13 +14,15 @@ stats_time = 5
 def sig(signum, frame):
     global w
     global keep_running
+    w.close()
     if signum == signal.SIGINT:
         logging.warning('Interrupt received. Closing connections')
         keep_running = False
         logging.shutdown()
     elif signum == signal.SIGHUP:
-        w.registered = False
         logging.warning('Restarting the conneciton')
+        w.connect()
+        w.register()
     else:
         logging.warning('Signal handler called with signal %s' % str(signum))
 

@@ -151,6 +151,7 @@ class SAMMWorker:
             temp=readsock[0].recv(2048)
             self.received_bytes+=len(temp)
             self.raw_data += temp
+            logging.debug("Buffer is now: %s" % self.raw_data.decode('ascii'))
             if self.raw_data == b"":
                 self.registered = False
                 raise Exception("Got disconnected?")
@@ -244,6 +245,7 @@ class SAMMWorker:
             'wait_status=%(wait_status)d\0exited_ok=%(exited_ok)d\0' \
             'outerr=%(outerr)s\0\1\0\0\0' % data
         self.sock.send(message.encode('ascii'))
+        logging.debug("Sent data: %s" % message)
         #print(message.decode('ascii'))
         self.running_jobs.pop(job_id)
         self.last_done_jobe_id=job_id

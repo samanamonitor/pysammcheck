@@ -90,8 +90,8 @@ def main(argv):
             try:
                 w.connect(qh_file)
                 logging.info("Connected to Nagios. Starting to process requests")
-            except:
-                logging.warning("Nagios not running. Retrying in 5 seconds")
+            except Exception as e:
+                logging.warning("Nagios not running. Retrying in 5 seconds. %s" % str(e))
                 time.sleep(retry_delay)
         w.register()
         if w.registered:

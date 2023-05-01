@@ -5,8 +5,6 @@ from .job import SAMMJob
 from .utils import str2array
 import logging
 
-PLUGIN_NAME="check_samana4"
-
 class SAMMWorkerStats:
     def __init__(self, w):
         if not isinstance(w, SAMMWorker):
@@ -62,7 +60,7 @@ class SAMMWorkerStats:
                 self.last_done_jobe_id)
 
 class SAMMWorker:
-    def __init__(self, sock=None, address=None, wait=5):
+    def __init__(self, plugin_name, sock=None, address=None, wait=5):
         if sock is None:
             self.sock = socket.socket(
                             socket.AF_UNIX, socket.SOCK_STREAM)
@@ -86,6 +84,7 @@ class SAMMWorker:
         self.sent_bytes=0
         self.address=address
         self.logger = logging.getLogger("SAMMWorker")
+        self.plugin_name = plugin_name
         #self.logger.setLevel(logging.DEBUG)
         #ch = logging.StreamHandler()
         #ch.setLevel(logging.DEBUG)
@@ -110,7 +109,7 @@ class SAMMWorker:
     def register(self):
         self.register_message=b'@wproc register name=test%(pid)d;pid=%(pid)d;' \
             b'plugin=%(plugin_name)s\0\1\0\0\0' \
-            % {b'pid': self.pid, b'plugin_name': PLUGIN_NAME.encode('ascii') }
+            % {b'pid': self.pid, b'plugin_name': self.plugin_name.encode('ascii') }
         self.logger.debug("Sending registration message: \"%s\"", self.register_message.decode('ascii'))
         self.sock.send(self.register_message)
         rec = self.sock.recv(3)

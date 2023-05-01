@@ -21,6 +21,7 @@ config['DEFAULT']['pid_file'] = "/run/sammworker_process.pid"
 config['DEFAULT']['qh_file'] = "/usr/local/nagios/var/rw/nagios.qh"
 config['DEFAULT']['debug'] = '0'
 config['DEFAULT']['log_file'] = "/usr/local/nagios/var/sammworker.log"
+config['DEFAULT']['plugin_name'] = "check_sammworker"
 
 def sig(signum, frame):
     global w, keep_running, config
@@ -107,14 +108,14 @@ def main(argv):
     signal.signal(signal.SIGINT, sig)
 
     while keep_running:
-        w = SAMMWorker(wait=config['DEFAULT'].getint('job_wait'), address=config['DEFAULT']['qh_file'])
+        w = SAMMWorker(config['DEFAULT']['plugin_name'], wait=config['DEFAULT'].getint('job_wait'), address=config['DEFAULT']['qh_file'])
         while w.connected == False:
             try:
                 w.connect()
                 logging.info("Connected to Nagios. Starting to process requests")
             except Exception as e:
                 logging.warning("Nagios not running. Retrying in 5 seconds. %s" % str(e))
-                time.sleep(config['DEFAULT']['retry_delay'])
+                time.sleep(config['DEFAULT'].getint('retry_delay'))
         w.register()
         if w.registered:
             logging.info("Registered")

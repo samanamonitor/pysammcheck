@@ -17,6 +17,7 @@ if __name__ == "__main__":
         version=__version__,
         packages=find_packages(include=['sammcheck', 'sammcheck.*']),
         scripts=['scripts/sammworker'],
-        data_files=[('/usr/local/nagios/etc/sammworker', ['cfg/sammworker.cfg'])],
+        data_files=[('/usr/local/nagios/etc/sammworker', ['cfg/sammworker.cfg']),
+            ('/usr/local/nagios/etc/objects/samana', ['cfg/commands-sammworker.cfg', 'cfg/role-sammworker-windows.cfg'])],
         install_requires=[ ]
     )

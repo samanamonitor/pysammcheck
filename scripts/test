@@ -1,0 +1,118 @@
+#!/usr/bin/python3
+from etcd import Client
+import json
+import time
+
+c=Client(host='192.168.69.11', port=2379)
+key='/samanamonitor/servers/%s/classes/%s' 
+host="test"
+
+class_name="Win32_PerfFormattedData_PerfOS_Processor"
+c.set(key % (host, class_name), json.dumps({
+    'epoch': time.time(),
+    'data':{
+        'PercentIdleTime': 90,
+        'PercentUserTime': 5,
+        'PercentPrivilegedTime': 1,
+        'PercentInterruptTime': 0
+        }
+    }))
+
+
+class_name="Win32_OperatingSystem"
+c.set(key % (host, class_name), json.dumps({
+    'epoch': time.time(),
+    'data': {
+        'TotalVisibleMemorySize': 1048576,
+        'FreePhysicalMemory': 0,
+        'TotalSwapSpaceSize': 1048576,
+        'FreeSpaceInPagingFiles': 0,
+        'LastBootUpTime': {'Datetime': '2023-04-24T00:42:29.485306-04:00'}
+        }
+    }))
+
+class_name="Win32_PageFileUsage"
+c.set(key % (host, class_name), json.dumps({
+    'epoch': time.time(),
+    'data': [{
+        'Caption': "C:\\swap",
+        'AllocatedBaseSize': 0,
+        'CurrentUsage': 1048576,
+        'PeakUsage': 0
+        }]}))
+
+class_name="Win32_NTLogEvent/Application"
+c.set(key % (host, class_name), json.dumps({
+    'epoch': time.time(),
+    'data': [{
+        'EventCode': "1000",
+        'Message': "Error...this is a test message",
+        'EventType': 1,
+        'Type': 'Error',
+        'SourceName': "This is a source name"
+        },{
+        'EventCode': "1001",
+        'Message': "Warning...this is a test message",
+        'EventType': 2,
+        'Type': 'Warning',
+        'SourceName': "This is a source name"
+        }]}))
+
+class_name="Win32_NTLogEvent/System"
+c.set(key % (host, class_name), json.dumps({
+    'epoch': time.time(),
+    'data': [{
+        'EventCode': "1000",
+        'Message': "Error...this is a test message",
+        'EventType': 1,
+        'Type': 'Error',
+        'SourceName': "This is a source name"
+        },{
+        'EventCode': "1001",
+        'Message': "Warning...this is a test message",
+        'EventType': 2,
+        'Type': 'Warning',
+        'SourceName': "This is a source name"
+        }]}))
+
+class_name="Win32_Service"
+c.set(key % (host, class_name), json.dumps({
+    'epoch': time.time(),
+    'data': [{
+        'DisplayName': 'This is a service 1',
+        'ServiceName': 'servicename1',
+        'Status': 4,
+        'State': "Running"
+        },{
+        'DisplayName': 'This is a service 2',
+        'ServiceName': 'servicename2',
+        'Status': 1,
+        'State': "Stopped"
+        }]}))
+
+class_name="Win32_LogicalDisk"
+c.set(key % (host, class_name), json.dumps({
+    'epoch': time.time(),
+    'data': [{'Access': '0', 'Availability': None, 'BlockSize': None, 'Caption': 'C:', 
+    'Compressed': 'false', 'ConfigManagerErrorCode': None, 'ConfigManagerUserConfig': None, 
+    'CreationClassName': 'Win32_LogicalDisk', 'Description': 'Local Fixed Disk', 'DeviceID': 'C:', 
+    'DriveType': '3', 'ErrorCleared': None, 'ErrorDescription': None, 'ErrorMethodology': None, 'FileSystem': 
+    'NTFS', 'FreeSpace': '35471372288', 'InstallDate': None, 'LastErrorCode': None, 'MaximumComponentLength': '255', 
+    'MediaType': '12', 'Name': 'C:', 'NumberOfBlocks': None, 'PNPDeviceID': None, 'PowerManagementSupported': None, 
+    'ProviderName': None, 'Purpose': None, 'QuotasDisabled': 'true', 'QuotasIncomplete': 'false', 'QuotasRebuilding': 
+    'false', 'Size': '106837307392', 'Status': None, 'StatusInfo': None, 'SupportsDiskQuotas': 'true', 
+    'SupportsFileBasedCompression': 'true', 'SystemCreationClassName': 'Win32_ComputerSystem', 
+    'SystemName': 'SMNNOVCTXVDA1', 'VolumeDirty': 'false', 'VolumeName': {}, 'VolumeSerialNumber': '1441F0E9'}, 
+    {'Access': '0', 'Availability': None, 'BlockSize': None, 'Caption': 'F:', 'Compressed': 'false', 
+    'ConfigManagerErrorCode': None, 'ConfigManagerUserConfig': None, 'CreationClassName': 'Win32_LogicalDisk', 
+    'Description': 'Local Fixed Disk', 'DeviceID': 'F:', 'DriveType': '3', 'ErrorCleared': None, 'ErrorDescription': None, 
+    'ErrorMethodology': None, 'FileSystem': 'NTFS', 'FreeSpace': '174804992', 'InstallDate': None, 'LastErrorCode': None, 
+    'MaximumComponentLength': '255', 'MediaType': '12', 'Name': 'F:', 'NumberOfBlocks': None, 'PNPDeviceID': None, 
+    'PowerManagementSupported': None, 'ProviderName': None, 'Purpose': None, 'QuotasDisabled': 'true', 
+    'QuotasIncomplete': 'false', 'QuotasRebuilding': 'false', 'Size': '524283904', 'Status': None, 'StatusInfo': None, 
+    'SupportsDiskQuotas': 'true', 'SupportsFileBasedCompression': 'true', 'SystemCreationClassName': 'Win32_ComputerSystem', 
+    'SystemName': 'SMNNOVCTXVDA1', 'VolumeDirty': 'false', 'VolumeName': 'System Reserved', 'VolumeSerialNumber': '604115A1'}]}))
+
+
+
+json.loads(c.get(key % (host, class_name)).value)

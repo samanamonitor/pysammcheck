@@ -48,7 +48,7 @@ def help(msg=""):
 
 def main(argv):
     t = None
-    global keep_running, pid_file, w, log_file, qh_file
+    global keep_running, pid_file, w, log_file, qh_file, retry_delay, runas, stats_time, job_wait
 
     try:
         opts, args = getopt.getopt(argv, "Fr:j:p:u:d:")

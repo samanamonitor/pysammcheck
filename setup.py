@@ -16,5 +16,6 @@ if __name__ == "__main__":
         name='sammcheck',
         version=__version__,
         packages=find_packages(include=['sammcheck', 'sammcheck.*']),
+        scripts=['scripts/sammworker'],
         install_requires=[ ]
     )

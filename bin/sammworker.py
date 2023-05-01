@@ -10,14 +10,21 @@ from threading import Timer
 w = None
 keep_running = True
 stats_time = 5
+pid_file='/run/sammworker_process.pid'
+runas='nagios'
+log_file="/usr/local/nagios/var/sammworker.log"
+qh_file='/usr/local/nagios/var/rw/nagios.qh'
+job_wait=5
+retry_delay=5
 
 def sig(signum, frame):
-    global w
-    global keep_running
+    global w, keep_running, pid_file
+
     w.close()
     if signum == signal.SIGINT:
         logging.warning('Interrupt received. Closing connections')
         keep_running = False
+        os.remove(pid_file)
         logging.shutdown()
     elif signum == signal.SIGHUP:
         logging.warning('Restarting the conneciton')
@@ -41,14 +48,7 @@ def help(msg=""):
 
 def main(argv):
     t = None
-    job_wait=5
-    retry_delay=5
-    pid_file='/run/sammworker_process.pid'
-    runas='nagios'
-    log_file="/usr/local/nagios/var/sammworker.log"
-    qh_file='/usr/local/nagios/var/rw/nagios.qh'
-    global keep_running
-    global w
+    global keep_running, pid_file, w, log_file, qh_file
 
     try:
         opts, args = getopt.getopt(argv, "Fr:j:p:u:d:")

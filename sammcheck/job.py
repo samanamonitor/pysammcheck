@@ -3,7 +3,7 @@ from .utils import str2array
 from threading import Thread
 import logging
 
-test_str=b'job_id=1270944\0type=0\0command=/usr/local/nagios/libexec/check_samana4 sammcheck.etcdcheck.SAMMEtcdCheck -H test1 -E 192.168.69.11:2379 -m cpu -w 35 -c 45\0timeout=60'.decode('ascii')
+test_str=b'job_id=1270944\0type=0\0command=check_sammworker sammcheck.etcdcheck.SAMMEtcdCheck -H test1 -E 192.168.69.11:2379 -m cpu -w 35 -c 45\0timeout=60'.decode('ascii')
 
 class SAMMJob():
     def __init__(self, raw_data):

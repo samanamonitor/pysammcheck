@@ -17,5 +17,6 @@ if __name__ == "__main__":
         version=__version__,
         packages=find_packages(include=['sammcheck', 'sammcheck.*']),
         scripts=['scripts/sammworker'],
+        data_files=[('/usr/local/nagios/etc/sammworker', ['cfg/sammworker.cfg'])],
         install_requires=[ ]
     )

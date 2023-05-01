@@ -7,7 +7,7 @@ import time
 
 intstr = lambda x: str(x) if x is not None else ''
 class SAMMEtcdCheck(SAMMCheck):
-    def __init__(self, argv=None, max_age=600):
+    def __init__(self, argv=None, max_age=600, timeout=60):
         self._etcdserver = "127.0.0.1"
         self._etcdport = 2379
         self._crit = None
@@ -17,6 +17,7 @@ class SAMMEtcdCheck(SAMMCheck):
         self._submod = None
         self._logfilters = []
         self._module = None
+        self.timeout = timeout
 
         super().__init__(argv)
         if self.done:
@@ -42,45 +43,48 @@ class SAMMEtcdCheck(SAMMCheck):
             return self.unknown("Module is a mandatory parameter.")
 
         self._data = None
-        self._etcdclient = etcd.Client(host=self._etcdserver, port=self._etcdport)
+        self._etcdclient = etcd.Client(host=self._etcdserver, port=self._etcdport, read_timeout=self.timeout)
         self.ready = True
 
     def process_args(self, argv):
         try:
             opts, args = getopt.getopt(argv, "hH:m:c:w:s:i:e:x:E:")
+            for opt, arg in opts:
+                if opt == '-h':
+                    return self.help()
+                elif opt == "-H":
+                    self._hostid = arg
+                elif opt == "-m":
+                    self._module = arg
+                elif opt == "-c":
+                    self._crit = arg
+                elif opt == "-w":
+                    self._warn = arg
+                elif opt == "-s":
+                    self._submod = arg
+                elif opt == "-i":
+                    self._incl = arg
+                elif opt == "-e":
+                    self._excl = arg
+                elif opt == "-x":
+                    for f in arg.split("|"):
+                        logfilter = tuple(f.split(','))
+                        if len(logfilter) < 2:
+                            logfilter += tuple('')
+                        self._logfilters += logfilter
+                elif opt == "-E":
+                    temp = arg.split(':')
+                    self._etcdserver = temp[0]
+                    if len(temp) > 1:
+                        self._etcdport = int(temp[1])
+                else:
+                    return self.help()
+
         except getopt.GetoptError as e:
             return self.help(str(e))
-        
-        for opt, arg in opts:
-            if opt == '-h':
-                return self.help()
-            elif opt == "-H":
-                self._hostid = arg
-            elif opt == "-m":
-                self._module = arg
-            elif opt == "-c":
-                self._crit = arg
-            elif opt == "-w":
-                self._warn = arg
-            elif opt == "-s":
-                self._submod = arg
-            elif opt == "-i":
-                self._incl = arg
-            elif opt == "-e":
-                self._excl = arg
-            elif opt == "-x":
-                for f in arg.split(";"):
-                    logfilter = tuple(f.split(','))
-                    if len(logfilter) < 2:
-                        logfilter += tuple('')
-                    self._logfilters += logfilter
-            elif opt == "-E":
-                temp = arg.split(':')
-                self._etcdserver = temp[0]
-                if len(temp) > 1:
-                    self._etcdport = int(temp[1])
-            else:
-                return self.help()
+
+    def __repr__(self):
+        return "<%s etcdserver=%s:%d>" % (self.__class__.__name__, self._etcdserver, self._etcdport)
 
     def help(msg=""):
         self.outmsg =  "%s\n" \
@@ -91,6 +95,7 @@ class SAMMEtcdCheck(SAMMCheck):
             "Copyright (c) 2021 Samana Group LLC\n\n" \
             "Usage: %s  [options]\n" \
             "-H <hostid>     Id of the host in Etcd database\n" \
+            "-E <etcdserver> Etcd server and port <ip>:<port> port is optional" \
             "-m <module>     Module to query. (cpu|ram|swap|log|services|hddrives|uptime)\n" \
             "-s <logname>    Log name when using \"log\" module.\n" \
             "-w <warning>    Warning threshold\n" \
@@ -106,12 +111,11 @@ class SAMMEtcdCheck(SAMMCheck):
         self.done = True
         self.stop = time.time
 
-    def run(self):
-        if not self.ready: return
-        self.start = time.time()
-        self.running = True
+    def get(self, key):
         try:
-            self._data = json.loads(self._etcdclient.get("/samanamonitor/data/%s" % self._hostid).value)
+            res=self._etcdclient.get(key).value
+            self._data = json.loads(res)
+
         except IndexError as e:
             return self.unknown(str(e))
         except etcd.EtcdKeyNotFound:
@@ -120,13 +124,17 @@ class SAMMEtcdCheck(SAMMCheck):
             return self.unknown("Data for ServerID \"%s\" is corrupt." % self._hostid)
         except etcd.EtcdException as e:
             return self.unknown("Server \"%s\" not responding." % str(e))
-
-        age_secs = time.time() - self._data['epoch']
+        if 'epoch' not in self._data:
+            return self.unknown("Epoch not found in data.")
+        age_secs = time.time() - self._data.get('epoch', 0)
         if age_secs > self._max_age:
             return self.unknown("Data is too old %d seconds." % age_secs)
+        self._data=self._data['data']
 
-        if 'classes' not in self._data:
-            return self.unknown("Legacy check configured.")
+    def run(self):
+        if not self.ready: return
+        self.start = time.time()
+        self.running = True
             
         if self._module == 'cpu':
             self.cpu()
@@ -150,10 +158,18 @@ class SAMMEtcdCheck(SAMMCheck):
         self.stop = time.time()
 
     def cpu(self):
+        self.get("/samanamonitor/servers/%s/classes/Win32_PerfFormattedData_PerfOS_Processor" % self._hostid)
+        if self.done: return
+
         if self._data is None:
             raise Exception("Data has not been fetched.")
         state = "UNKNOWN"
         graphmax = 100
+
+        if 'PercentIdleTime' not in self._data or 'PercentUserTime' not in self._data \
+            or 'PercentInterruptTime' not in self._data or 'PercentPrivilegedTime' not in self._data:
+            self.unknown("Missing attributes from class")
+            return
 
         val = 100.0 - float(self._data['PercentIdleTime'])
 
@@ -166,20 +182,25 @@ class SAMMEtcdCheck(SAMMCheck):
         else:
             state = "OK"
             self.outval = 0
-        Processor=self._data['classes']['Win32_PerfFormattedData_PerfOS_Processor'][0]
         perfusage = "| Load=%d;%s;%s;0;%d" % (
             int(val), 
             intstr(self._warn), 
             intstr(self._crit), 
             graphmax)
-        perfusage += " PercentIdleTime=%d;;;0;100" % int(Processor['PercentIdleTime'])
-        perfusage += " PercentUserTime=%d;;;0;100" % int(Processor['PercentUserTime'])
-        perfusage += " PercentPrivilegedTime=%d;;;0;100" % int(Processor['PercentPrivilegedTime'])
-        perfusage += " PercentInterruptTime=%d;;;0;100" % int(Processor['PercentInterruptTime'])
+        perfusage += " PercentIdleTime=%d;;;0;100" % int(self._data['PercentIdleTime'])
+        perfusage += " PercentUserTime=%d;;;0;100" % int(self._data['PercentUserTime'])
+        perfusage += " PercentPrivilegedTime=%d;;;0;100" % int(self._data['PercentPrivilegedTime'])
+        perfusage += " PercentInterruptTime=%d;;;0;100" % int(self._data['PercentInterruptTime'])
         self.outmsg = "%s - CPU Usage %0.f %% %s" % (
             state, val, perfusage)
 
     def ram(self):
+        self.get("/samanamonitor/servers/%s/classes/Win32_OperatingSystem" % self._hostid)
+        if self.done: return
+
+        if self._data is None:
+            raise Exception("Data has not been fetched.")
+
         state = "UNKNOWN"
         
         total = float(self._data['TotalVisibleMemorySize']) / 1024.0
@@ -210,6 +231,12 @@ class SAMMEtcdCheck(SAMMCheck):
             state, total, used, percused, free, percfree, perfused)
 
     def swap(self):
+        self.get("/samanamonitor/servers/%s/classes/Win32_OperatingSystem" % self._hostid)
+        if self.done: return
+
+        if self._data is None:
+            raise Exception("Data has not been fetched.")
+
         state = "UNKNOWN"
 
         TotalSwapSpaceSize = self._data.get('TotalSwapSpaceSize')
@@ -239,7 +266,10 @@ class SAMMEtcdCheck(SAMMCheck):
             intstr(self._warn),
             intstr(self._crit))
 
-        for pf in self._data['classes']['Win32_PageFileUsage']:
+        self.get("/samanamonitor/servers/%s/classes/Win32_PageFileUsage" % self._hostid)
+        if self.done: return
+
+        for pf in self._data:
             name = pf['Caption'].replace(':', '_').replace('\\', '').replace('.', '_')
             perfused += " %s_AllocatedBaseSize=%d;;;;" % (name, int(pf['AllocatedBaseSize']))
             perfused += " %s_CurrentUsage=%d;;;;" % (name, int(pf['CurrentUsage']))
@@ -251,6 +281,12 @@ class SAMMEtcdCheck(SAMMCheck):
 
     def log(self):
         logname = self._submod
+        self.get("/samanamonitor/servers/%s/classes/Win32_NTLogEvent/%s" % (self._hostid, logname))
+        if self.done: return
+
+        if self._data is None:
+            raise Exception("Data has not been fetched.")
+
         excl = self._excl
         state = "UNKNOWN"
         messages = ""
@@ -270,10 +306,7 @@ class SAMMEtcdCheck(SAMMCheck):
             0, # Audit Failure
         ]
 
-        if logname not in self._data['Events'] or self._data['Events'][logname] is None:
-            raise Exception('UNKNOWN - Event log %s not configured.' % logname)
-
-        events = self._data['Events'][logname]
+        events = self._data
 
         if isinstance(events, dict):
             if len(events) == 0:
@@ -304,9 +337,7 @@ class SAMMEtcdCheck(SAMMCheck):
                         event.get('SourceName', 'Unknown'),
                         event.get('Message', '')[:80])
 
-        if ('Truncated' in self._data['Events'] and \
-                logname in self._data['Events']['Truncated']) or \
-                (self._crit is not None and val > self._crit):
+        if self._crit is not None and val > self._crit:
             state = "CRITICAL"
             self.outval = 2
         elif self._warn is not None and val > self._warn:
@@ -324,10 +355,19 @@ class SAMMEtcdCheck(SAMMCheck):
             (state, val, perfused, addl)
 
     def uptime(self):
+        self.get("/samanamonitor/servers/%s/classes/Win32_OperatingSystem" % self._hostid)
+        if self.done: return
+
+        if self._data is None:
+            raise Exception("Data has not been fetched.")
+
         state = "UNKNOWN"
 
-        
-        val = float(self._data['UpTime'])
+        LastBootUpTime=self._data['LastBootUpTime']['Datetime']
+        timezone=LastBootUpTime[-6:]
+        timezonesecs=(int(timezone[-2:])+int(timezone[1:3])*60) * (-1 if timezone[0] == '+' else 1) *60
+        lbt=time.strptime(LastBootUpTime.split('.')[0], "%Y-%m-%dT%H:%M:%S")
+        val=(time.time() - time.mktime(lbt)+timezonesecs)/3600
 
         if self._crit is not None and val > self._crit:
             state = "CRITICAL"
@@ -345,11 +385,17 @@ class SAMMEtcdCheck(SAMMCheck):
             (state, val, perfused, ' '.join(sys.argv))
 
     def services(self):
+        self.get("/samanamonitor/servers/%s/classes/Win32_Service" % (self._hostid, logname))
+        if self.done: return
+
+        if self._data is None:
+            raise Exception("Data has not been fetched.")
+
         state = 'UNKNOWN'
         r = 0
         s = 0
         stopped_services = '\nStopped Services:\n'
-        for service in self._data['Services']:
+        for service in self._data:
             displayname = service.get('DisplayName').lower()
             name = service.get('ServiceName').lower()
             if self._excl is not None and self._excl != '' and \
@@ -384,6 +430,12 @@ class SAMMEtcdCheck(SAMMCheck):
             (state, s, r, perfused, stopped_services if self.outval > 0 else '')
 
     def hddrives(self):
+        self.get("/samanamonitor/servers/%s/classes/Win32_LogicalDisk" % self._hostid)
+        if self.done: return
+
+        if self._data is None:
+            raise Exception("Data has not been fetched.")
+
         state = 'UNKNOWN'
 
         disk_messages = []
@@ -418,7 +470,7 @@ class SAMMEtcdCheck(SAMMCheck):
                 return 1
             return 0
 
-        disklist = self._data.get('Disks', [])
+        disklist = self._data
         if isinstance(disklist, dict):
             disklist = [ disklist ]
         elif isinstance(disklist, list):

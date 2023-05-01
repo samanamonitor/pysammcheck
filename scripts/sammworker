@@ -6,25 +6,30 @@ import time
 import logging
 import signal
 from threading import Timer
+import configparser
 
 w = None
 keep_running = True
-stats_time = 5
-pid_file='/run/sammworker_process.pid'
-runas='nagios'
-log_file="/usr/local/nagios/var/sammworker.log"
-qh_file='/usr/local/nagios/var/rw/nagios.qh'
-job_wait=5
-retry_delay=5
+
+config = configparser.ConfigParser()
+
+config['DEFAULT']['job_wait'] = '5'
+config['DEFAULT']['retry_delay'] = '5'
+config['DEFAULT']['stats_time'] = '5'
+config['DEFAULT']['config_file'] = "/usr/local/nagios/etc/sammworker/sammworker.cfg"
+config['DEFAULT']['pid_file'] = "/run/sammworker_process.pid"
+config['DEFAULT']['qh_file'] = "/usr/local/nagios/var/rw/nagios.qh"
+config['DEFAULT']['debug'] = '0'
+config['DEFAULT']['log_file'] = "/usr/local/nagios/var/sammworker.log"
 
 def sig(signum, frame):
-    global w, keep_running, pid_file
+    global w, keep_running, config
 
     w.close()
     if signum == signal.SIGINT:
         logging.warning('Interrupt received. Closing connections')
         keep_running = False
-        os.remove(pid_file)
+        os.remove(config['DEFAULT']['pid_file'])
         logging.shutdown()
     elif signum == signal.SIGHUP:
         logging.warning('Restarting the conneciton')
@@ -36,51 +41,65 @@ def sig(signum, frame):
 def help(msg=""):
     print("%s\n" \
         "USAGE: %s [ options ]\n" \
-        "-F Run in the foreground\n" \
-        "-r <seconds>  Delay between attempts of connection to worker pipe in seconds (def: 5 seconds)\n" \
-        "-j <seconds>  Time to wait for jobs in seconds (def: 5 seconds)\n" \
-        "-p <pid file> Path to the PID file (def: /run/sammworker_process.pid)\n" \
-        "-u <username> Username to run this process (def: nagios)\n" \
-        "-d <level>    Debug level\n" \
-        "-h            Print this screen" % \
+        "-c <config file>  Config file (mandatory)\n" \
+        "-F                Run in the foreground\n" \
+        "-r <seconds>      Delay between attempts of connection to worker pipe in seconds (def: 5 seconds)\n" \
+        "-j <seconds>      Time to wait for jobs in seconds (def: 5 seconds)\n" \
+        "-p <pid file>     Path to the PID file (def: /run/sammworker_process.pid)\n" \
+        "-u <username>     Username to run this process (def: nagios)\n" \
+        "-d <level>        Debug level\n" \
+        "-h                Print this screen" % \
         (msg, sys.argv[0]))
     return -1
 
 def main(argv):
     t = None
-    global keep_running, pid_file, w, log_file, qh_file, retry_delay, runas, stats_time, job_wait
+    global keep_running, w, config
+    override = {}
+    config_file = None
 
     try:
-        opts, args = getopt.getopt(argv, "Fr:j:p:u:d:")
+        opts, args = getopt.getopt(argv, "Fr:j:p:d:c:")
     except getopt.GetoptError:
         return help()
 
     foreground=False
-    logging.basicConfig(level=logging.INFO, filename=log_file)
     for opt, arg in opts:
         if opt == '-h':
             return help()
         elif opt == '-F':
             foreground = True
         elif opt == '-r':
-            retry_delay = int(arg)
+            override['retry_delay'] = arg
         elif opt == '-j':
-            wait = int(arg)
+            override['job_wait'] = arg
         elif opt == '-p':
-            pid_file = arg
-        elif opt == '-u':
-            runas = arg
+            override['pid_file'] = arg
         elif opt == '-d':
-            logging.basicConfig(level=logging.DEBUG, filename=log_file)
+            override['debug'] = arg
+        elif opt == '-c':
+            config_file = arg
         else:
             return help("Invalid parameter %s" % arg)
+
+    if config_file is None:
+        return help("Parameter config_file is mandatory")
+
+    config.read(config_file)
+    for k in override.keys():
+        config['DEFAULT'][k] = override[k]
+
+    if config['DEFAULT'].getint('debug') > 0:
+        logging.basicConfig(level=logging.DEBUG, filename=config['DEFAULT']['log_file'])
+    else:
+        logging.basicConfig(level=logging.INFO, filename=config['DEFAULT']['log_file'])
 
     if foreground == False:
         n = os.fork()
         if n > 0:
             return 0
 
-    with open(pid_file, "w") as f:
+    with open(config['DEFAULT']['pid_file'], "w") as f:
         pid = os.getpid()
         f.write(str(pid))
 
@@ -88,14 +107,14 @@ def main(argv):
     signal.signal(signal.SIGINT, sig)
 
     while keep_running:
-        w = SAMMWorker(wait=job_wait, address=qh_file)
+        w = SAMMWorker(wait=config['DEFAULT'].getint('job_wait'), address=config['DEFAULT']['qh_file'])
         while w.connected == False:
             try:
                 w.connect()
                 logging.info("Connected to Nagios. Starting to process requests")
             except Exception as e:
                 logging.warning("Nagios not running. Retrying in 5 seconds. %s" % str(e))
-                time.sleep(retry_delay)
+                time.sleep(config['DEFAULT']['retry_delay'])
         w.register()
         if w.registered:
             logging.info("Registered")
@@ -103,7 +122,7 @@ def main(argv):
             logging.critical("Unable to register. Aborting")
             w.close()
         while keep_running and w.registered and w.connected:
-            if t is None or time.time() - t > stats_time:
+            if t is None or time.time() - t > config['DEFAULT'].getint('stats_time'):
                 logging.info(w.stats())
                 t = time.time()
             try:
@@ -122,7 +141,7 @@ def main(argv):
                     logging.debug("Finished job %s" % j)
         logging.warning("Disconnected from Nagios.")
         w.close()
-    os.remove(pid_file)
+    os.remove(config['DEFAULT']['pid_file'])
     return 0
 
 if __name__ == "__main__":

@@ -71,9 +71,9 @@ class SAMMDummyCheck(SAMMCheck):
             'epoch': time.time(),
             'data': {
                 'TotalVisibleMemorySize': 1048576,
-                'FreePhysicalMemory': 0,
+                'FreePhysicalMemory': 524288,
                 'TotalSwapSpaceSize': 1048576,
-                'FreeSpaceInPagingFiles': 0,
+                'FreeSpaceInPagingFiles': 524288,
                 'LastBootUpTime': {'Datetime': '2023-04-24T00:42:29.485306-04:00'}
                 }
             }))
@@ -83,8 +83,8 @@ class SAMMDummyCheck(SAMMCheck):
             'epoch': time.time(),
             'data': [{
                 'Caption': "C:\\swap",
-                'AllocatedBaseSize': 0,
-                'CurrentUsage': 1048576,
+                'AllocatedBaseSize': 1048576,
+                'CurrentUsage': 524288,
                 'PeakUsage': 0
                 }]}))
 

@@ -4,6 +4,7 @@ from etcd import Client
 import json
 import time
 import etcd
+import random
 
 class SAMMDummyCheck(SAMMCheck):
     def __init__(self, argv=None, timeout=60):
@@ -54,13 +55,15 @@ class SAMMDummyCheck(SAMMCheck):
         key='/samanamonitor/servers/%s/classes/%s'
         host=self._hostid
 
+        PercentUserTime=random.gauss(mu=20, sigma=15.0)
+        PercentPrivilegedTime=random.gauss(mu=5, sigma=3)
         class_name="Win32_PerfFormattedData_PerfOS_Processor"
         self._etcdclient.set(key % (host, class_name), json.dumps({
             'epoch': time.time(),
             'data':{
-                'PercentIdleTime': 90,
-                'PercentUserTime': 5,
-                'PercentPrivilegedTime': 1,
+                'PercentIdleTime': 100-PercentUserTime-PercentPrivilegedTime,
+                'PercentUserTime': PercentUserTime,
+                'PercentPrivilegedTime': PercentPrivilegedTime,
                 'PercentInterruptTime': 0
                 }
             }))
@@ -71,9 +74,9 @@ class SAMMDummyCheck(SAMMCheck):
             'epoch': time.time(),
             'data': {
                 'TotalVisibleMemorySize': 1048576,
-                'FreePhysicalMemory': 524288,
+                'FreePhysicalMemory': random.gauss(mu=524288, sigma=1000),
                 'TotalSwapSpaceSize': 1048576,
-                'FreeSpaceInPagingFiles': 524288,
+                'FreeSpaceInPagingFiles': random.gauss(mu=524288, sigma=1000),
                 'LastBootUpTime': {'Datetime': '2023-04-24T00:42:29.485306-04:00'}
                 }
             }))
@@ -84,7 +87,7 @@ class SAMMDummyCheck(SAMMCheck):
             'data': [{
                 'Caption': "C:\\swap",
                 'AllocatedBaseSize': 1048576,
-                'CurrentUsage': 524288,
+                'CurrentUsage': random.gauss(mu=524288, sigma=1000),
                 'PeakUsage': 0
                 }]}))
 

@@ -1,5 +1,6 @@
 import sys, getopt
 from .check import SAMMCheck
+from . import __version__
 from etcd import Client
 import json
 import time
@@ -7,15 +8,16 @@ import etcd
 import random
 
 class SAMMDummyCheck(SAMMCheck):
-    def __init__(self, argv=None, timeout=60):
-        self._etcdserver = "127.0.0.1"
-        self._etcdport = 2379
-        self.timeout = timeout
+    _etcdserver = "127.0.0.1"
+    _etcdport = 2379
+    timeout = 60
+    _module_name = "Dummy"
+    def __init__(self, argv):
         super().__init__(argv)
 
-    def process_args(self, argv):
+    def process_args(self):
         try:
-            opts, args = getopt.getopt(argv, "hH:E:")
+            opts, args = getopt.getopt(self._argv, "hH:E:t:")
             for opt, arg in opts:
                 if opt == '-h':
                     return self.help()
@@ -26,6 +28,8 @@ class SAMMDummyCheck(SAMMCheck):
                     self._etcdserver = temp[0]
                     if len(temp) > 1:
                         self._etcdport = int(temp[1])
+                elif opt == "-t":
+                    self.timeout = arg
                 else:
                     return self.help()
 
@@ -33,24 +37,31 @@ class SAMMDummyCheck(SAMMCheck):
             return self.help(str(e))
         self._etcdclient = etcd.Client(host=self._etcdserver, port=self._etcdport, read_timeout=self.timeout)
 
+    def check_args(self):
+        super().check_args()
+        if not self.ready: return
+        self.ready = False
+
+        try:
+            self.timeout = int(self.timeout)
+        except ValueError:
+            self.unknown("Timeout can only be an integer.")
+        self.ready = True
+
+    def __repr__(self):
+        return "<%s etcdserver=%s:%d>" % (self.__class__.__name__, self._etcdserver, self._etcdport)
 
     def help(self, msg=""):
-        self.outmsg =  "%s\n" \
-            "Check Samana Dummy v2.0.0\n" \
-            "This nagios plugin come with ABSOLUTELY NO WARRANTY and is property of\n" \
-            "SAMANA GROUP LLC. If you want to use it, you should contact us before\n" \
-            "to get a license.\n" \
-            "Copyright (c) 2021 Samana Group LLC\n\n" \
-            "Usage: %s  [options]\n" \
-            "-H <hostid>     Id of the host in Etcd database\n" \
+        self.outmsg =  "%s\n" % msg \
+            + self._base_help % (self._module_name, __version__, self._argv[0]) + \
             "-E <etcdserver> Etcd server and port <ip>:<port> port is optional" \
-            "-h              To get this help message\n" \
-            "%s" % (msg, sys.argv[0], ' '.join(sys.argv))
+            "\ncurrent command: \n%s\n" % (' '.join(self._argv))
         self.outval = 3
         self.done = True
         self.stop = time.time
 
     def run(self):
+        if not self.ready: return
         self.start = time.time()
         key='/samanamonitor/servers/%s/classes/%s'
         host=self._hostid

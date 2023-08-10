@@ -1,5 +1,6 @@
-import sys, getopt
+import getopt
 from .check import SAMMCheck
+from . import __version__
 import json
 import re
 import etcd
@@ -7,53 +8,28 @@ import time
 
 intstr = lambda x: str(x) if x is not None else ''
 class SAMMEtcdCheck(SAMMCheck):
-    def __init__(self, argv=None, max_age=600, timeout=60):
-        self._etcdserver = "127.0.0.1"
-        self._etcdport = 2379
-        self._crit = None
-        self._warn = None
-        self._hostid = ""
-        self._excl = None
-        self._submod = None
-        self._logfilters = []
-        self._module = None
-        self.timeout = timeout
-
+    _etcdserver = "127.0.0.1"
+    _etcdport = 2379
+    _excl = None
+    _submod = None
+    _logfilters = []
+    _module = None
+    _max_age = 600
+    timeout = 60
+    _data = None
+    _module_name = "Etcd"
+    def __init__(self, argv):
         super().__init__(argv)
-        if self.done:
-            return self.unknown()
-        self._max_age = max_age
-
-        if self._hostid == "":
-            return self.unknown("Host ID not specified.")
-
-        if self._crit is not None:
-            try:
-                self._crit = int(self._crit)
-            except:
-                return self.unknown("Invalid CRITICAL threshold.")
-
-        if self._warn is not None:
-            try:
-                self._warn = int(self._warn)
-            except:
-                return self.unknown("Invalid WARNING threshold.")
-
-        if self._module is None:
-            return self.unknown("Module is a mandatory parameter.")
-
-        self._data = None
         self._etcdclient = etcd.Client(host=self._etcdserver, port=self._etcdport, read_timeout=self.timeout)
-        self.ready = True
 
-    def process_args(self, argv):
+    def process_args(self):
         try:
-            opts, args = getopt.getopt(argv, "hH:m:c:w:s:i:e:x:E:")
+            opts, args = getopt.getopt(self._argv, "hH:m:c:w:s:i:e:x:E:a:t:")
             for opt, arg in opts:
                 if opt == '-h':
                     return self.help()
                 elif opt == "-H":
-                    self._hostid = arg
+                    self._host = arg
                 elif opt == "-m":
                     self._module = arg
                 elif opt == "-c":
@@ -77,59 +53,59 @@ class SAMMEtcdCheck(SAMMCheck):
                     self._etcdserver = temp[0]
                     if len(temp) > 1:
                         self._etcdport = int(temp[1])
+                elif opt == "-a":
+                    self._max_age = arg
+                elif opt == "-t":
+                    self.timeout = arg
                 else:
                     return self.help()
 
         except getopt.GetoptError as e:
             return self.help(str(e))
 
+    def check_args(self):
+        super().check_args()
+        if not self.ready: return
+        self.ready = False
+        if self._module is None:
+            self.unknown("Module is a mandatory parameter.")
+            return
+        try:
+            self._max_age = int(self._max_age)
+        except ValueError:
+            self.unknown("Max Age can only be an integer.")
+            return
+
+        try:
+            self.timeout = int(self.timeout)
+        except ValueError:
+            self.unknown("Timeout can only be an integer.")
+            return
+        self.ready = True
+
     def __repr__(self):
         return "<%s etcdserver=%s:%d>" % (self.__class__.__name__, self._etcdserver, self._etcdport)
 
-    def help(msg=""):
-        self.outmsg =  "%s\n" \
-            "Check Samana Etcd v2.0.0\n" \
-            "This nagios plugin come with ABSOLUTELY NO WARRANTY and is property of\n" \
-            "SAMANA GROUP LLC. If you want to use it, you should contact us before\n" \
-            "to get a license.\n" \
-            "Copyright (c) 2021 Samana Group LLC\n\n" \
-            "Usage: %s  [options]\n" \
-            "-H <hostid>     Id of the host in Etcd database\n" \
+    def help(self, msg=""):
+        self.outmsg =  "%s\n" % msg \
+            + self._base_help % (self._module_name, __version__, self._argv[0]) + \
+            "-H <host>       Id of the host in Etcd database\n" \
+            "-w <warning>    Warning threshold\n" \
+            "-c <critical>   Critical threshold\n" \
             "-E <etcdserver> Etcd server and port <ip>:<port> port is optional" \
             "-m <module>     Module to query. (cpu|ram|swap|log|services|hddrives|uptime)\n" \
             "-s <logname>    Log name when using \"log\" module.\n" \
-            "-w <warning>    Warning threshold\n" \
-            "-c <critical>   Critical threshold\n" \
             "-i <include>    Regex of the services that need to be included when using the \"services\" module.\n" \
             "-e <exclude>    Regex of the services that need to be excluded when using the \"services\" module.\n" \
             "-x <logfilter>  When using \"log\" module, this attribute is used to filter out events. the format is:\n" \
             "                logfilter format:  <eventid>,<text>;<eventid>,text;....\n" \
             "                Multiple filters must be separated by ';'\n" \
-            "-h              To get this help message\n" \
-            "%s" % (msg, sys.argv[0], ' '.join(sys.argv))
+            "-a <seconds>    Max age of record in etcd. Default: 600\n" \
+            "-t <seconds>    Timeout in seconds when communicating with etcd server. Default: 60.\n" \
+            "\ncurrent command: \n%s\n" % (' '.join(self._argv))
         self.outval = 3
         self.done = True
         self.stop = time.time
-
-    def get(self, key):
-        try:
-            res=self._etcdclient.get(key).value
-            self._data = json.loads(res)
-
-        except IndexError as e:
-            return self.unknown(str(e))
-        except etcd.EtcdKeyNotFound:
-            return self.unknown("ServerID \"%s\" not found in the database." % self._hostid)
-        except ValueError:
-            return self.unknown("Data for ServerID \"%s\" is corrupt." % self._hostid)
-        except etcd.EtcdException as e:
-            return self.unknown("Server \"%s\" not responding." % str(e))
-        if 'epoch' not in self._data:
-            return self.unknown("Epoch not found in data.")
-        age_secs = time.time() - self._data.get('epoch', 0)
-        if age_secs > self._max_age:
-            return self.unknown("Data is too old %d seconds." % age_secs)
-        self._data=self._data['data']
 
     def run(self):
         if not self.ready: return
@@ -137,19 +113,19 @@ class SAMMEtcdCheck(SAMMCheck):
         self.running = True
             
         if self._module == 'cpu':
-            self.cpu()
+            self._cpu()
         elif self._module == 'ram':
-            self.ram()
+            self._ram()
         elif self._module == 'swap':
-            self.swap()
+            self._swap()
         elif self._module == 'log':
-            self.log()
+            self._log()
         elif self._module == 'services':
-            self.services()
+            self._services()
         elif self._module == 'hddrives':
-            self.hddrives()
+            self._hddrives()
         elif self._module == 'uptime':
-            self.uptime()
+            self._uptime()
         else:
             self.outmsg = "UNKNOWN - Invalid Module %s" % self._module
             self.outval = 3
@@ -157,12 +133,36 @@ class SAMMEtcdCheck(SAMMCheck):
         self.running = False
         self.stop = time.time()
 
-    def cpu(self):
-        self.get("/samanamonitor/servers/%s/classes/Win32_PerfFormattedData_PerfOS_Processor" % self._hostid)
+    def _get(self, key):
+        try:
+            res=self._etcdclient.get(key).value
+            self._data = json.loads(res)
+
+        except IndexError as e:
+            return self.unknown(str(e))
+        except etcd.EtcdKeyNotFound:
+            return self.unknown("ServerID \"%s\" not found in the database." % self._host)
+        except ValueError:
+            return self.unknown("Data for ServerID \"%s\" is corrupt." % self._host)
+        except etcd.EtcdException as e:
+            return self.unknown("Server \"%s\" not responding." % str(e))
+        if 'epoch' not in self._data:
+            self.unknown("Epoch not found in data.")
+            return
+        age_secs = time.time() - self._data.get('epoch', 0)
+        if age_secs > self._max_age:
+            self.unknown("Data is too old %d seconds." % age_secs)
+            return
+        self._data=self._data['data']
+
+    def _cpu(self):
+        self._get("/samanamonitor/servers/%s/classes/Win32_PerfFormattedData_PerfOS_Processor" % self._host)
         if self.done: return
 
         if self._data is None:
-            raise Exception("Data has not been fetched.")
+            self.unknown("Data has not been fetched.")
+            return
+
         state = "UNKNOWN"
         graphmax = 100
 
@@ -173,16 +173,7 @@ class SAMMEtcdCheck(SAMMCheck):
 
         val = 100.0 - float(self._data['PercentIdleTime'])
 
-        if self._crit is not None and val > self._crit:
-            state = "CRITICAL"
-            self.outval = 2
-        elif self._warn is not None and val > self._warn:
-            state = "WARNING"
-            self.outval = 1
-        else:
-            state = "OK"
-            self.outval = 0
-        perfusage = "| Load=%d;%s;%s;0;%d" % (
+        perfusage = " | Load=%d;%s;%s;0;%d" % (
             int(val), 
             intstr(self._warn), 
             intstr(self._crit), 
@@ -191,11 +182,17 @@ class SAMMEtcdCheck(SAMMCheck):
         perfusage += " PercentUserTime=%d;;;0;100" % int(self._data['PercentUserTime'])
         perfusage += " PercentPrivilegedTime=%d;;;0;100" % int(self._data['PercentPrivilegedTime'])
         perfusage += " PercentInterruptTime=%d;;;0;100" % int(self._data['PercentInterruptTime'])
-        self.outmsg = "%s - CPU Usage %0.f %% %s" % (
-            state, val, perfusage)
 
-    def ram(self):
-        self.get("/samanamonitor/servers/%s/classes/Win32_OperatingSystem" % self._hostid)
+        msg = "CPU Usage %0.f %%" % val
+        if self._crit is not None and val > self._crit:
+            self.critical(msg, perf_data=perfusage)
+        elif self._warn is not None and val > self._warn:
+            self.warning(msg, perf_data=perfusage)
+        else:
+            self.ok(msg, perf_data=perfusage)
+
+    def _ram(self):
+        self._get("/samanamonitor/servers/%s/classes/Win32_OperatingSystem" % self._host)
         if self.done: return
 
         if self._data is None:
@@ -209,29 +206,26 @@ class SAMMEtcdCheck(SAMMCheck):
         percused = used * 100.0 / total
         percfree = free * 100.0 / total
 
-        if self._crit is not None and percused > self._crit:
-            state = "CRITICAL"
-            self.outval = 2
-        elif self._warn is not None and percused > self._warn:
-            state = "WARNING"
-            self.outval = 1
-        else:
-            state = "OK"
-            self.outval = 0
-
-        perfused = "| PercentMemoryUsed=%d;%s;%s;0;100 MemoryUsed=%d;;;0;%d" % (
+        perfused = " | PercentMemoryUsed=%d;%s;%s;0;100 MemoryUsed=%d;;;0;%d" % (
             percused,
             intstr(self._warn),
             intstr(self._crit),
             free,
-            total
-            )
-        self.outmsg = "%s - Physical Memory: Total: %.2fGB - " \
-            "Used: %.2fGB (%.1f%%) - Free %.2fGB (%.2f%%) %s" % (
-            state, total, used, percused, free, percfree, perfused)
+            total)
 
-    def swap(self):
-        self.get("/samanamonitor/servers/%s/classes/Win32_OperatingSystem" % self._hostid)
+        msg = "Physical Memory: Total: %.2fGB - " \
+            "Used: %.2fGB (%.1f%%) - Free %.2fGB (%.2f%%)" % \
+                (total, used, percused, free, percfree)
+
+        if self._crit is not None and percused > self._crit:
+            self.critical(msg, perf_data=perfusage)
+        elif self._warn is not None and percused > self._warn:
+            self.warning(msg, perf_data=perfusage)
+        else:
+            self.ok(msg, perf_data=perfusage)
+
+    def _swap(self):
+        self._get("/samanamonitor/servers/%s/classes/Win32_OperatingSystem" % self._host)
         if self.done: return
 
         if self._data is None:
@@ -251,22 +245,12 @@ class SAMMEtcdCheck(SAMMCheck):
         percused = used * 100.0 / total
         percfree = free * 100.0 / total
 
-        if self._crit is not None and percused > self._crit:
-            state = "CRITICAL"
-            self.outval = 2
-        elif self._warn is not None and percused > self._warn:
-            state = "WARNING"
-            self.outval = 1
-        else:
-            state = "OK"
-            self.outval = 0
-
         perfused = "| Total_PercentageUsed=%d;%s;%s;0;100" % (
             percused,
             intstr(self._warn),
             intstr(self._crit))
 
-        self.get("/samanamonitor/servers/%s/classes/Win32_PageFileUsage" % self._hostid)
+        self._get("/samanamonitor/servers/%s/classes/Win32_PageFileUsage" % self._host)
         if self.done: return
 
         for pf in self._data:
@@ -275,13 +259,22 @@ class SAMMEtcdCheck(SAMMCheck):
             perfused += " %s_CurrentUsage=%d;;;;" % (name, int(pf['CurrentUsage']))
             perfused += " %s_PercentageUsage=%d;;;;" % (name, int((int(pf['CurrentUsage'])*100/int(pf['AllocatedBaseSize'])) if pf['AllocatedBaseSize'] != 0 else 0))
             perfused += " %s_PeakUsage=%d;;;;" % (name, int(pf['PeakUsage']))
-        self.outmsg = "%s - Swap Memory: Total: %.2fGB - " \
-            "Used: %.2fGB (%.1f%%) - Free %.2fGB (%.2f%%) %s" % (
-            state, total, used, percused, free, percfree, perfused)
 
-    def log(self):
+        msg = "Swap Memory: Total: %.2fGB - " \
+            "Used: %.2fGB (%.1f%%) - Free %.2fGB (%.2f%%)" % (
+            total, used, percused, free, percfree)
+
+        if self._crit is not None and percused > self._crit:
+            self.critical(msg, perf_data=perfusage)
+        elif self._warn is not None and percused > self._warn:
+            self.warning(msg, perf_data=perfusage)
+        else:
+            self.ok(msg, perf_data=perfusage)
+
+
+    def _log(self):
         logname = self._submod
-        self.get("/samanamonitor/servers/%s/classes/Win32_NTLogEvent/%s" % (self._hostid, logname))
+        self._get("/samanamonitor/servers/%s/classes/Win32_NTLogEvent/%s" % (self._host, logname))
         if self.done: return
 
         if self._data is None:
@@ -354,8 +347,8 @@ class SAMMEtcdCheck(SAMMCheck):
         self.outmsg = "%s - Error or Warning Events=%d %s %s" %  \
             (state, val, perfused, addl)
 
-    def uptime(self):
-        self.get("/samanamonitor/servers/%s/classes/Win32_OperatingSystem" % self._hostid)
+    def _uptime(self):
+        self._get("/samanamonitor/servers/%s/classes/Win32_OperatingSystem" % self._host)
         if self.done: return
 
         if self._data is None:
@@ -382,10 +375,10 @@ class SAMMEtcdCheck(SAMMCheck):
         perfused = "| uptime=%.0f;%s;%s;;" % \
             (val, intstr(self._warn), intstr(self._crit))
         self.outmsg = "%s - Uptime of server is %.0f Hours %s\n%s" % \
-            (state, val, perfused, ' '.join(sys.argv))
+            (state, val, perfused, ' '.join(self._argv))
 
-    def services(self):
-        self.get("/samanamonitor/servers/%s/classes/Win32_Service" % (self._hostid, logname))
+    def _services(self):
+        self._get("/samanamonitor/servers/%s/classes/Win32_Service" % (self._host, logname))
         if self.done: return
 
         if self._data is None:
@@ -429,8 +422,8 @@ class SAMMEtcdCheck(SAMMCheck):
         self.outmsg = "%s - %d Services Stopped - %d Services Running %s\n%s" % \
             (state, s, r, perfused, stopped_services if self.outval > 0 else '')
 
-    def hddrives(self):
-        self.get("/samanamonitor/servers/%s/classes/Win32_LogicalDisk" % self._hostid)
+    def _hddrives(self):
+        self._get("/samanamonitor/servers/%s/classes/Win32_LogicalDisk" % self._host)
         if self.done: return
 
         if self._data is None:
